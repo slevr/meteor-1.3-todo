@@ -1,49 +1,45 @@
-function configureGraphQLServer(options = {}) {
-  /* eslint-disable global-require*/
-  const express = require('express');
-  const apolloServer = require('apollo-server').apolloServer;
-  const proxyMiddleware = require('http-proxy-middleware');
+import { apolloServer } from 'apollo-server';
+import express from 'express';
+import proxyMiddleware from 'http-proxy-middleware';
+import {Meteor} from 'meteor/meteor';
+import {check} from 'meteor/check';
+import {Accounts} from 'meteor/accounts-base';
+import cors from 'cors';
 
-  const Meteor = Package['meteor'].Meteor;
-  const Accounts = Package['accounts-base'].Accounts;
-  const WebApp = Package['webapp'].WebApp;
-  const check = Package['check'].check;
-
-  if (!Meteor) {
-    const error = 'Meteor package is missing';
-    throw new Error(error);
-  }
-
-  if (!Accounts) {
-    const error = 'accounts-base package is missing';
-    throw new Error(error);
-  }
-
-  if (!WebApp) {
-    const error = 'Webapp package is missing';
-    throw new Error(error);
-  }
-
-  if (!check) {
-    const error = 'check package is missing';
-    throw new Error(error);
-  }
+export default function configureGraphQLServer(options = {}) {
+  const SERVER_PORT = process.env.PORT || 3000;
+  const SERVER_HOST = process.env.HOST || 'localhost';
+  const IS_DEV = process.env.NODE_ENV !== 'production';
 
   const {
     schema,
     resolvers,
-    port = 4000,
-    urlName = 'graphql',
-    graphiql = true,
-    pretty = true,
+    graphPort = 4000,
+    graphUrl = '/graphql',
+    graphiql = IS_DEV,
+    pretty = IS_DEV,
     context = {},
     ...others,
   } = options;
 
-  const graphQLServer = express();
-  const GRAPHQL_PORT = port;
+  const server = express();
 
-  graphQLServer.use(`/${urlName}`, apolloServer(async (req) => {
+  // Connect to ngrok in dev mode
+  if (IS_DEV && process.env.ENABLE_NGROK ) {
+    server.use('*', cors());
+    var ngrok = require('ngrok');
+    ngrok.connect(SERVER_PORT, (innerErr, url) => {
+      if (innerErr) {
+        console.log(`Error connecting with ngrok:${innerErr}`);
+      }
+
+      console.log(`The app is available via the internet! ${url}:${SERVER_PORT}`);
+    });
+  } else {
+    console.log(`The app is running locally! ${SERVER_HOST}:${SERVER_PORT}`);
+  }
+
+  server.use(`${graphUrl}`, apolloServer(async (req) => {
     let userId = null;
 
     /* eslint-disable no-underscore-dangle */
@@ -86,12 +82,11 @@ function configureGraphQLServer(options = {}) {
     };
   }));
 
-  graphQLServer.listen(GRAPHQL_PORT, () => console.log(`
-    GraphQL Server is now running on http://localhost:${GRAPHQL_PORT}
-    Checkout http://localhost:${GRAPHQL_PORT}/${urlName} to use GraphiQL
+  server.listen(graphPort, () => console.log(`
+    GraphQL Server is now running on http://${SERVER_HOST}:${graphPort}
+    Checkout http://${SERVER_HOST}:${graphPort}${graphUrl} to use GraphiQL
   `));
 
-  WebApp.rawConnectHandlers.use(proxyMiddleware(`http://localhost:${GRAPHQL_PORT}/graphql`));
+  WebApp.rawConnectHandlers.use(proxyMiddleware(`http://${SERVER_HOST}:${graphPort}${graphUrl}`));
 }
 
-export default configureGraphQLServer;
